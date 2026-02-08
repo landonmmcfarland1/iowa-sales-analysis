@@ -1,0 +1,15 @@
+[workspace]
+authors = ["landonmmcfarland1 <landon.m.mcfarland@gmail.com>"]
+channels = ["conda-forge"]
+name = "iowa-sales-analysis"
+platforms = ["osx-arm64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+marimo = ">=0.19.8,<0.20"
+python = "3.14.*"
+polars = ">=1.38.1,<2"
+plotly = ">=6.5.2,<7"
+numpy = ">=2.4.2,<3"

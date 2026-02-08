@@ -1,0 +1,27 @@
+# Large CSV files only (parquet is smaller and included)
+*.csv
+
+# Pixi environment and cache
+.pixi/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Marimo
+.marimo/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
