@@ -4,7 +4,7 @@ A memory-efficient analysis of Iowa's liquor sales data handling ~27 million tra
 
 ## Project Context
 
-As a data consultant for the State of Iowa, this analysis provides insights into liquor sales patterns across the state, including revenue trends, product preferences, geographic distribution, and temporal patterns. The project emphasizes **production-ready code** that can handle datasets larger than available RAM through efficient lazy evaluation strategies.
+As originally an assignment wherein my professor put us in a scenario of a data consultant for the State of Iowa, this analysis provides insights into liquor sales patterns across the state, including revenue trends, product preferences, geographic distribution, and temporal patterns. The project emphasizes **production-ready code** that can handle datasets larger than available RAM through efficient lazy evaluation strategies.
 
 ## Key Technical Achievements
 
