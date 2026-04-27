@@ -2,13 +2,28 @@
 
 A memory-efficient analysis of Iowa's liquor sales data handling ~27 million transaction records (~7GB dataset) using lazy evaluation techniques. Originally developed as part of MIS501 (Python Fundamentals), this project has been significantly extended to include a full predictive modeling section comparing Logistic Regression and Random Forest classifiers for retail store performance classification.
 
-## What's New (March 2026 Update)
+## What's New (April 2026 Update)
 
-The project has been substantially expanded beyond the original course deliverable:
+The predictive modeling section has been redesigned to produce models that are actually actionable rather than trivially confirming what a sales analyst already knows. The original models were trained on all store-month records and asked whether a store was in the top quartile — a task so dominated by persistence (big stores stay big) that it provided no useful signal. Three changes fix this:
 
-- **Predictive Modeling Section (Section 6)**: Added a store-level revenue classification pipeline that predicts whether a store will be a top-quartile revenue performer in a given month
-- **Random Forest Classifier**: Trained on engineered lag and rolling features across 11 years of transaction history; AUC-ROC: 0.9866
-- **Logistic Regression Baseline**: Added as a direct comparison to the Random Forest; AUC-ROC: 0.9855 — the near-identical performance reveals the underlying pattern is largely linear
+- **Breakout Detection Framing**: The dataset is now filtered to stores that were in the bottom 75% last month. The models now predict which of those lower-tier stores will surge into the top quartile this month — the ~4.9% "breakout" event — rather than confirming that already-dominant stores remain dominant
+- **Monthly Dynamic Thresholds**: The 75th percentile cutoff for `is_top_quartile` is computed per Year-Month rather than globally, so seasonal effects don't dominate. A store must outperform its peers *that specific month*, not just benefit from December being a high-revenue month industry-wide
+- **StandardScaler on Logistic Regression**: The logistic regression now trains on standardized features (scaler fit on train only, applied to test) to prevent large-magnitude revenue lag features from drowning out smaller-scale predictors like `month_of_year` during gradient-based optimization
+
+**Updated model results under the new framing:**
+
+| Metric | Logistic Regression | Random Forest |
+|--------|-------------------|---------------|
+| AUC-ROC | 0.9668 | 0.9675 |
+| Top Quartile Precision | 0.34 | 0.34 |
+| Top Quartile Recall | 0.93 | 0.93 |
+| Top Quartile F1 | 0.50 | 0.50 |
+
+The lower precision relative to the original README figures reflects the harder task: the model is now targeting a 4.9% positive class rather than a straightforward 25% top-quartile label on the full panel. The 34% precision represents a ~7x lift over the baseline breakout rate, and 93% recall means 186 out of 199 actual breakout stores in the test set are correctly flagged.
+
+**Earlier additions (March 2026), still in place:**
+
+- **Predictive Modeling Section (Section 6)**: Store-level revenue classification pipeline using engineered lag and rolling features
 - **Temporal Feature Engineering**: Store-month aggregation with strictly backward-looking lag features (1, 2, 3 months), 3-month rolling average, and expanding cumulative mean — all designed to prevent data leakage
 - **Data Leakage Fix**: Store baseline features use an expanding cumulative mean (`cum_sum() / cum_count()`) rather than a full-series mean, ensuring no future revenue leaks into training features
 - **Temporal Train/Test Split**: Trains on 2012–April 2023 (~180,000 store-month rows), tests on the final 3 months — no shuffling
@@ -29,7 +44,7 @@ As a data consultant for the State of Iowa, this analysis provides insights into
 - **Automated Data Pipeline**: Streamlined cleaning with minimal code duplication following DRY principles
 - **Dynamic Category Mapping**: Consolidates 100+ liquor categories using regex patterns instead of hardcoded mappings
 - **Interactive Visualizations**: Eight production-ready Plotly charts exploring multiple analysis dimensions
-- **Predictive Modeling**: Logistic Regression vs. Random Forest comparison with AUC-ROC ~0.986 on held-out temporal test set
+- **Predictive Modeling**: Logistic Regression vs. Random Forest comparison on a temporal breakout detection task; AUC-ROC ~0.967 on held-out temporal test set
 - **Leak-Free Feature Engineering**: All predictive features are strictly backward-looking using lag, rolling, and expanding window operations
 - **Automatic Dataset Download**: Full dataset streams from Hugging Face on first run and caches locally — no manual download required
 
@@ -173,29 +188,31 @@ Calculates comprehensive metrics including:
 
 ### 6. Store Performance Classification (Logistic Regression vs. Random Forest)
 
-**Business Question**: Given a store's sales history, can we predict whether it will be a top-quartile revenue performer next month?
+**Business Question**: Given a store's recent sales history, can we predict whether a currently lower-tier store will break into the top quartile of revenue performers next month?
 
-**Why top quartile?** Each month, stores are ranked by total revenue. The top 25% are labeled as top performers. The threshold is computed month-by-month (not globally) so that seasonal effects don't dominate — a store must outperform its peers *that specific month*, not just benefit from December being a high-revenue month industry-wide.
+**Why this framing?** The original version of this model asked whether any store would be a top-quartile performer, which turned out to be a near-trivial task — stores that were already dominant tended to stay dominant, and the model was largely just learning persistence. The redesigned task filters the sample to stores that were in the bottom 75% last month and asks whether those stores will surge into the top quartile this month. That's the ~4.9% "breakout" event, and it's a question a distributor can actually act on.
+
+**Why top quartile with monthly thresholds?** Each month, stores are ranked by total revenue and the top 25% are labeled as top performers. The threshold is computed month-by-month (not globally) so that seasonal effects don't dominate — a store must outperform its peers *that specific month*, not just benefit from December being a high-revenue month industry-wide.
 
 **Pipeline:**
 - Aggregate 27M transactions to store-month level (~185,000 rows)
 - Engineer lag features (1, 2, 3 months), 3-month rolling average, month-over-month growth rate, expanding cumulative mean baseline, transaction count lag, SKU diversity lag, and month-of-year
-- Temporal train/test split: train on 2012–April 2023, test on final 3 months
-- Logistic Regression (with StandardScaler) and Random Forest (300 trees, balanced class weights) trained and evaluated in parallel
+- Label each store-month with a monthly 75th-percentile threshold, track prior-month status, and filter to only bottom-75% stores from last month
+- Temporal train/test split: train on 2012–April 2023, test on final 3 months — no shuffling
+- Logistic Regression (with StandardScaler, fit on train only) and Random Forest (300 trees, max depth 8, balanced class weights) trained and evaluated in parallel
 
 **Results:**
 
 | Metric | Logistic Regression | Random Forest |
 |--------|-------------------|---------------|
-| AUC-ROC | 0.9855 | 0.9866 |
-| Top Quartile Precision | 0.87 | 0.85 |
-| Top Quartile Recall | 0.91 | 0.93 |
-| Top Quartile F1 | 0.89 | 0.89 |
-| Overall Accuracy | 94% | 94% |
+| AUC-ROC | 0.9668 | 0.9675 |
+| Top Quartile Precision | 0.34 | 0.34 |
+| Top Quartile Recall | 0.93 | 0.93 |
+| Top Quartile F1 | 0.50 | 0.50 |
 
-The near-identical AUC scores indicate the underlying pattern is largely linear — a store's revenue trajectory predicts its future tier straightforwardly enough that logistic regression captures it almost as well as a 300-tree Random Forest.
+**What the metrics mean in practice:** Out of 199 actual breakout stores in the test set, both models identify 186 of them — a 93% recall rate. The 34% precision means there are false positives, but it represents roughly a 7x lift over the 4.9% baseline breakout rate. A distributor targeting only the ~540 stores flagged by the model gets far better coverage of rising stores than any random allocation across 4,000+ lower-tier locations.
 
-**Key finding**: The 3-month rolling average and store historical average dominate feature importance. Operational features (SKU diversity, transaction count, seasonality) contribute almost nothing once revenue history is controlled for — store performance is highly persistent.
+**Key finding:** The near-identical AUC scores between the linear baseline and the 300-tree ensemble confirm that the mathematical signal of a store breakout is largely linear. Revenue lag features and rolling averages push stores across the quartile threshold in a way that logistic regression captures almost as well as a Random Forest — the additional computational cost of the ensemble is not required for this task.
 
 ---
 
@@ -246,8 +263,8 @@ The near-identical AUC scores indicate the underlying pattern is largely linear 
 
 - **Category dominance**: Whiskey generates the highest revenue despite vodka having more individual SKUs
 - **Geographic concentration**: Polk County (Des Moines) accounts for a disproportionate share of sales
-- **Store performance persistence**: A store's recent revenue trajectory is the single strongest predictor of future tier — more predictive than product mix, SKU diversity, or seasonality
-- **Linear separability**: Logistic Regression and Random Forest achieve near-identical AUC (~0.986), suggesting top-quartile store status is largely linearly separable from revenue history alone
+- **Breakout signal is linear**: Both Logistic Regression and Random Forest achieve near-identical AUC (~0.967) on the breakout detection task, confirming the predictive signal is largely linear even for the harder within-tier surge prediction problem
+- **Revenue history dominates**: The 3-month rolling average and store historical average are the strongest features; SKU diversity, transaction count, and seasonality contribute almost nothing once revenue trajectory is controlled for
 
 ---
 
@@ -255,7 +272,7 @@ The near-identical AUC scores indicate the underlying pattern is largely linear 
 
 **Original Course**: MIS501 — Python Fundamentals  
 **Institution**: University of Alabama, Culverhouse College of Business  
-**Extended as**: Business Analytics Portfolio Project (March 2026)
+**Extended as**: Business Analytics Portfolio Project (March–April 2026)
 
 ---
 

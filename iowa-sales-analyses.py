@@ -851,26 +851,24 @@ def _(df_with_categories, pl, px):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## 6. Store Performance Classification: Logistic Regression vs. Random Forest
+    ## 6. Store Performance Classification: Logistic Regression vs Random Forest
 
-    **Business Question:** Given a store's sales history, can we predict whether
-    it will be a top-quartile revenue performer next month — and which modeling
-    approach does this best?
+    **Business Question:** Given a store's sales history, can we predict whether it will break out into the top tier of revenue performers next month, and which modeling approach does this best?
 
-    **What "top quartile" means here:** Each month, stores are ranked by total revenue. The top 25% of stores for that month are labeled as top performers (label = 1). The threshold is computed month-by-month rather than globally, so a store isn't simply rewarded for being in a high-revenue city — it has to outperform its peers *that specific month*. A store in a small Iowa town can be a top-quartile performer just as easily as a store in Des Moines.
+    **What "top quartile" means here:** Each month, stores are ranked by total revenue. The top 25 percent of stores for that month are labeled as top performers (label = 1). The threshold is computed dynamically per month rather than globally, so a store is not simply rewarded for being in a high revenue city, it has to outperform its peers that specific month. A store in a small Iowa town can be a top tier performer just as easily as a store in Des Moines.
 
-    **Why this question matters:** In retail distribution, identifying which
-    stores are likely to be high performers next month has direct operational value. It informs inventory allocation, promotional targeting, and sales rep prioritization. Getting this wrong in either direction has a cost:  missing a top performer (false negative) means lost revenue opportunity, while over-allocating to a store that underperforms (false positive) ties up inventory and promotional budget.
+    **The Breakout Detector Shift:** Predicting if a massive supermarket will stay massive is trivial. Instead, this model filters the dataset to only evaluate stores that were in the bottom 75 percent last month. The model attempts to predict the rare ~4.9 percent of stores that will surge into the top quartile in the very next month.
+
+    **Why this question matters:** In retail distribution, identifying which mid tier stores are about to become high performers has direct operational value. It informs proactive inventory allocation, promotional targeting, and sales rep prioritization. Getting this wrong in either direction has a cost. Missing a rising star (false negative) means lost revenue opportunity, while over allocating to a store that underperforms (false positive) ties up inventory and promotional budget.
 
     **Why compare two models?**
 
     We evaluate two classification approaches on the same features, training data, and test window to understand whether the added complexity of a Random Forest is justified over a simpler linear baseline:
 
-    - **Logistic Regression** is the standard industry baseline for binary classification. It assumes a linear relationship between features and the log-odds of being a top performer. It is fast, interpretable, and requires feature standardization since it is sensitive to differences in scale across variables.
+    * **Logistic Regression** is the standard industry baseline for binary classification. It assumes a linear relationship between features and the log odds of being a top performer. It is fast, interpretable, and requires feature standardization since it is sensitive to differences in scale across variables.
+    * **Random Forest** is an ensemble of decision trees that captures nonlinear relationships and interactions between features automatically. It is scale invariant. Unlike logistic regression, it does not require standardization because it makes decisions based on splits rather than distances. The cost is reduced interpretability relative to logistic regression, which is offset here by the feature importance output.
 
-    - **Random Forest** is an ensemble of decision trees that captures nonlinear relationships and interactions between features automatically. It is scale-invariant — unlike logistic regression, it does not require standardization because it makes decisions based on splits rather than distances. The cost is reduced interpretability relative to logistic regression, which is offset here by the feature importance output.
-
-    The key question the comparison answers "does the nonlinear structure of store revenue data (interactions between a store's rolling trend, its long-run baseline, and its recent lag pattern) require a nonlinear model to capture, or is the relationship linear enough that logistic regression performs comparably?"
+    The key question the comparison answers is whether the nonlinear structure of store revenue data requires a nonlinear model to capture, or if the relationship is linear enough that logistic regression performs comparably.
     """)
     return
 
@@ -914,20 +912,28 @@ def _(df_with_categories, pl):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ### Step 2: Feature Engineering (Lag & Rolling Features)
+ 
+    """)
+    return
 
-    All features use only information available *before* the prediction period.
-    Lag features carry forward a store's own recent history; rolling features
-    smooth short-term noise. This is the key design choice that makes the model
-    usable in practice — at prediction time you only know the past.
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ### Step 2: Feature Engineering (Lag and Rolling Features)
+
+    All features use only information available before the prediction period.
+    Lag features carry forward a store's own recent history, while rolling features
+    smooth short term noise. This is the key design choice that makes the model
+    usable in practice, because at prediction time you only know the past.
     """)
     return
 
 
 @app.cell(hide_code=True)
 def _(pl, store_month):
-    # Build lag and rolling features within each store's time series.
-    # pl.Expr.shift(n) looks back n rows within the group — strictly past data.
+    #Build lag and rolling features within each store's time series.
+    #pl.Expr.shift(n) looks back n rows within the group — strictly past data.
     store_features = (
         store_month
         .sort(['Store Name', 'Year', 'Month'])
@@ -946,7 +952,7 @@ def _(pl, store_month):
               .over('Store Name')
               .alias('revenue_lag3'),
 
-            # Rolling 3-month average revenue (uses lags 1-3, not current month)
+            #Rolling 3-month average revenue (uses lags 1-3, not current month)
             pl.col('monthly_revenue')
               .shift(1)
               .rolling_mean(window_size=3)
@@ -973,10 +979,10 @@ def _(pl, store_month):
             pl.col('num_transactions').shift(1).over('Store Name').alias('txn_lag1'),
             pl.col('unique_skus').shift(1).over('Store Name').alias('skus_lag1'),
 
-            # Month-of-year as a numeric feature (captures seasonality)
+            #Month-of-year as a numeric feature (captures seasonality)
             pl.col('Month').alias('month_of_year'),
         ])
-        # Drop rows where lag features are null (first 1-3 months per store have no history)
+        #Drop rows where lag features are null (first 1-3 months per store have no history)
         .drop_nulls(subset=['revenue_lag1', 'revenue_lag2', 'revenue_lag3'])
     )
 
@@ -989,15 +995,15 @@ def _(pl, store_month):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ### Step 3: Define Target & Temporal Train/Test Split
+    ### Step 3: Define Target and Temporal Train Test Split
 
-    The target is top-quartile store performance for a given month. Using a
-    month-specific threshold (rather than a global one) controls for seasonality —
-    a store that performs well in December shouldn't be penalized because December
-    is simply a high-revenue month industry-wide.
+    The target is top tier store performance for a given month. Using a
+    dynamic monthly threshold (rather than a global one) controls for seasonality, ensuring
+    a store that performs well in December is not artificially inflated because December
+    is simply a high revenue month industry wide.
 
-    The train/test split is strictly temporal: the last 3 months of data are held
-    out as the test set. **No shuffling.** Shuffling a time-series dataset leaks
+    The train and test split is strictly temporal. The last 3 months of data are held
+    out as the test set. **No shuffling.** Shuffling a time series dataset leaks
     future rows into training, inflating reported accuracy in a way that would
     never replicate in production.
     """)
@@ -1005,15 +1011,8 @@ def _(mo):
 
 
 @app.cell
-def _():
-    return
-
-
-@app.cell(hide_code=True)
 def _(pl, store_features):
-
-
-    # Month-specific top-quartile threshold (75th percentile per month)
+    #Month-specific top-quartile threshold (75th percentile per month)
     monthly_thresholds = (
         store_features
         .group_by(['Year', 'Month'])
@@ -1030,6 +1029,18 @@ def _(pl, store_features):
             .cast(pl.Int8)
             .alias('is_top_quartile')
         ])
+        .sort(['Store Name', 'Year', 'Month'])
+        .with_columns([
+            # Identify where the store stood in the previous month
+            pl.col('is_top_quartile')
+            .shift(1)
+            .over('Store Name')
+            .alias('was_top_quartile_last_month')
+        ])
+        # BUSINESS LOGIC SHIFT: 
+        # We only want to analyze stores that were in the bottom 75% last month.
+        # We are predicting if they will "break out" into the top 25% this month.
+        .filter(pl.col('was_top_quartile_last_month') == 0)
     )
 
     # Temporal split: hold out the last 3 calendar months as test
@@ -1053,8 +1064,8 @@ def _(pl, store_features):
     )
 
     print(f"Temporal cutoff:  {cutoff_year}-{cutoff_month:02d}")
-    print(f"Training rows:    {len(train):,}  ({train['is_top_quartile'].mean():.1%} positive)")
-    print(f"Test rows:        {len(test):,}  ({test['is_top_quartile'].mean():.1%} positive)")
+    print(f"Training rows:    {len(train):,}  ({train['is_top_quartile'].mean():.2%} positive breakouts)")
+    print(f"Test rows:        {len(test):,}  ({test['is_top_quartile'].mean():.2%} positive breakouts)")
     return test, train
 
 
@@ -1145,10 +1156,10 @@ def _(
     print(f"  {'Actual: Bottom':15s}  {cm[0,0]:>12,}  {cm[0,1]:>9,}")
     print(f"  {'Actual: Top':15s}  {cm[1,0]:>12,}  {cm[1,1]:>9,}")
 
-    # Feature importances for visualization in next cell
+    #Feature importances for visualization in next cell
     feature_importances = list(zip(FEATURE_COLS, rf.feature_importances_))
 
-    # Get predicted probabilities (column 1 = probability of top quartile)
+    #Get predicted probabilities (column 1 = probability of top quartile)
     y_prob = rf.predict_proba(X_test)[:, 1]
     auc = roc_auc_score(y_test, y_prob)
     print()
@@ -1171,7 +1182,7 @@ def _(mo):
 
 @app.cell(hide_code=True)
 def _(feature_importances, pl, px):
-    # Build a tidy Polars DataFrame for plotting (consistent with rest of notebook)
+    #Build a tidy Polars DataFrame for plotting (consistent with rest of notebook)
     importance_df = (
         pl.DataFrame({
             'Feature': [f for f, _ in feature_importances],
@@ -1227,35 +1238,28 @@ def _(feature_importances, pl, px):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ### Model Results & Interpretation
+    ### Model Results & Interpretation: Predicting Revenue Breakouts
 
-    **LR — AUC-ROC: 0.9855 | Accuracy: 94% | Top-Quartile F1: 0.89**
+    **LR — AUC-ROC: 0.9668 | Precision: 0.34 | Recall: 0.93 | F1: 0.50**
+    **RF — AUC-ROC: 0.9675 | Precision: 0.34 | Recall: 0.93 | F1: 0.50**
 
-    **RF — AUC-ROC: 0.9866 | Accuracy: 94% | Top-Quartile F1: 0.89**
-
-    Both models demonstrate strong ability to identify top-quartile storesbefore the fact, using only information available at prediction time. The near-identical performance across both models is itself a finding. This indicates the relationship between revenue history and store tier is largely linear.
+    By filtering the dataset to only include stores that were in the bottom 75% last month, we shifted the model from a trivial "status predictor" to an actionable "breakout detector." The models are now attempting to predict the ~4.9% of stores that surge into the top quartile in a single month.
 
     **What the metrics mean in practice:**
 
-    - **AUC-ROC of ~0.986** means that if you randomly selected one top-quartile store and one bottom store, either model would correctly rank the top-quartile store higher 98.6% of the time. This measures ranking ability across all possible decision thresholds, not just the default 50% cutoff. The 0.0011 gap between LR (0.9855) and RF (0.9866) is negligible in practice.
-    - **Precision** measures how often the model is right when it flags a store as a top performer. LR (0.87) is slightly more precise than RF (0.85) meaning fewer false alarms per 100 flagged stores.
-    - **Recall** measures how many actual top-quartile stores the model catches. RF (0.93) edges LR (0.91), meaning only 91 genuine top performers were missed by RF vs. more with LR. For this business problem, where missing a high-performing store is more costly than a false alarm,
-      RF's recall advantage makes it the marginally better operational choice.
-    - **F1 of 0.89** on the top-quartile class is identical across both models, reflecting the precision-recall tradeoff: LR wins on precision, RF wins on recall, and the harmonic mean lands in the same place.
+    - **Exceptional Recall (93%):** Out of the 199 actual breakout stores in the test set, the models successfully identified 186 of them. It rarely misses a rising star.
+    - **High Strategic Lift (34% Precision):** While a 34% precision means there are false positives (predicting a breakout that doesn't quite materialize), it represents a ~7x lift over the baseline breakout rate of 4.9%.
+    - **Operational Value:** If a distributor wants to proactively allocate inventory or marketing budget to rising stores, they only need to target the 540 stores flagged by the model, rather than blanketing all 4,000+ lower-tier stores.
 
-    **What the feature importances reveal:**
+    **Methodological Conclusion:**
 
-    The dominant predictors are entirely revenue-based, i.e., the 3-month rolling average, long-run store average, and lagged monthly revenues account for the vast majority of predictive signal. Operational features like transaction count, SKU diversity, and month-of-year contribute almost nothing once revenue history is controlled for. This suggests that
-    **store performance is highly persistent**: a store's revenue trajectory is the strongest predictor of where it will rank next month, and not much else in the data will change that. The fact that logistic regression performs nearly as well as random forest reinforces this, meaning the persistence effect is linear enough that a simple model captures it almost completely.
-
-    **Methodological notes:**
-
-    - The train/test split is strictly temporal (no shuffling), meaning both models train on 2012–April 2023 and are evaluated on the final 3 months, simulating real-world deployment conditions.
-    - The top-quartile threshold is computed month-by-month rather than globally, controlling for seasonality so that high December revenue does not automatically qualify a store that would rank average in a typical month.
-    - `class_weight='balanced'` corrects for the 75/25 class imbalance in both models, ensuring each optimizes for correctly identifying top performers rather than defaulting to the majority class.
-    - Store baseline features use an expanding cumulative mean of all prior months only, ensuring no future revenue leaks into training features.
-    - Logistic regression requires feature standardization (StandardScaler) because it is sensitive to differences in variable scale. Random Forest is scale-invariant and uses the raw features directly.
+    The near-identical performance between the linear baseline (Logistic Regression) and the complex ensemble (Random Forest) is a key finding. It proves that the mathematical signals of a store breakout are highly linear. A store's recent lag features and rolling averages linearly push it across the quartile threshold, meaning the heavy computational cost of a Random Forest is not required to accurately forecast retail revenue surges in this market.
     """)
+    return
+
+
+@app.cell
+def _():
     return
 
 
